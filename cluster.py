@@ -1,4 +1,4 @@
-from manifest import cluster_heads, main_server
+from config import cluster_heads, main_server
 from functions import * 
 
 

@@ -4,7 +4,7 @@ import threading
 import json
 import datetime
 import random
-from manifest import *
+from config import *
 from multiprocessing import Process, Lock
 from colorama import Fore, Style, init
 import firebase_admin

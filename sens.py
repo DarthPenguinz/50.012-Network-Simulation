@@ -1,4 +1,4 @@
-from manifest import *
+from config import *
 from functions import *
 
 if __name__ == '__main__':
