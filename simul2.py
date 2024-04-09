@@ -9,13 +9,13 @@ general_commands = [
     f"source {curr_dir}/virtualenvs/bin/activate"
 ]
 
+# Sens id, frequency, send retries
+# clusterid, send retries, send interval 
+# server send interval, buffer size
 commands = [
-    'python3 sens.py 1 3',
-    'python3 sens.py 2 5',
-    'python3 sens.py 3 7',
-    'python3 host.py 1',
-    'python3 host.py 2',
-    'python3 main.py 10'
+    'python3 sens.py 1 3 2',
+    'python3 cluster.py 1 2 0.01',
+    'python3 main.py 0.01 100'
 ]
 
 # Open a new terminal window for each command
