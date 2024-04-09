@@ -11,5 +11,5 @@ if __name__ == '__main__':
     interval = float(interval)
     print("CLUSTER ID: ", idx)
     time.sleep(2)
-    ClusterHead1 = ClusterHead(idx, cluster_heads[idx][0], cluster_heads[idx][1], main_server[0], main_server[1], timeout=1, repeats=repeat_num, send_interval=interval, buffer_size=100) 
+    ClusterHead1 = ClusterHead(idx, cluster_heads[idx][0], cluster_heads[idx][1], main_server[0], main_server[1], timeout=1, repeats=repeat_num, send_interval=interval, buffer_size=20) 
     ClusterHead1.start_server()

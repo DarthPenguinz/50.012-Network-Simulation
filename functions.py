@@ -350,7 +350,6 @@ class MainServer():
         self.lock = Lock()
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.buffer = {}
-        self.priority = []
         self.send_interval = send_interval
         self.overall_rcv = {}
         self.sensors_sent = {}
