@@ -153,7 +153,7 @@ class Sensor:
         
 # ------------------------ Cluster Head Class ------------------------
 class ClusterHead:
-    def __init__(self, id, host, port, server_host, server_port, timeout=2, repeats = 3, send_interval = 10, buffer_size = 20):
+    def __init__(self, id, host, port, server_host, server_port, timeout=2, repeats = 3, send_interval = 10, buffer_size = 20, use_priority_queue = True):
         self.total_received = {}
         self.total_sent = {1: 0}
         self.timeout = timeout
@@ -173,6 +173,8 @@ class ClusterHead:
         self.repeats = repeats
         self.send_interval = send_interval
         self.buffer_size = buffer_size
+        self.priority_deleted = 0
+        self.use_priority_queue = use_priority_queue
         
     def connect_and_send(self, host_id, host, port, send_data, pkt_no, priority):
         attempts = 0
@@ -238,7 +240,7 @@ class ClusterHead:
                         "priority": False,
                         "pkt_no": self.pkt_no,
                         "time": str(datetime.datetime.now()),
-                        "data": {"received": self.total_received, "sent": self.total_sent},
+                        "data": {"received": self.total_received, "sent": self.total_sent, "priority_deleted": self.priority_deleted},
                         "metric": True
                     }
                     self.connect_and_send("Metric", self.server_host, self.server_port, data_pkt, self.pkt_no, priority)
@@ -292,17 +294,31 @@ class ClusterHead:
                     if src not in self.buffer:
                         self.buffer[src] = (pkt_num,pkt_num + 1)
                         self.mapping[short] = data
-                        if data.get('priority'):
+                        if self.use_priority_queue:
+                            if data.get('priority'):
+                                self.high_priority.append(short)
+                            elif not data.get('priority'):
+                                self.low_priority.append(short)
+                        else:
                             self.high_priority.append(short)
-                        elif not data.get('priority'):
-                            self.low_priority.append(short)
-                        if len(self.high_priority) > self.buffer_size:
-                            remove = self.high_priority.pop(0)
-                            # del self.mapping[remove]
-                        elif len(self.low_priority) > self.buffer_size:
+                    print("----------------------------------")
+                    print(f"{Fore.GREEN} Added to Buffer {Style.RESET_ALL}")
+                    print(f"{Fore.GREEN} Buffer Fill: {len(self.high_priority) + len(self.low_priority)}/ {self.buffer_size} {Style.RESET_ALL}")
+                    if len(self.high_priority) + len(self.low_priority) > self.buffer_size:
+                        print("----------------------------------")
+                        print(f"{Fore.RED} Buffer Full {Style.RESET_ALL}")
+                        if len(self.low_priority) > 0:
+                            print(f"{Fore.RED} Deleting From Priority {"Low"} {Style.RESET_ALL}")
                             remove = self.low_priority.pop(0)
-                            # del self.mapping[remove]
-                            
+                            del self.mapping[remove]
+                        else:
+                            remove = self.high_priority.pop(0)
+                            print(f"{Fore.RED} Deleting From Priority {"High"} {Style.RESET_ALL}")
+                            if self.mapping[remove].get('priority'):
+                                self.priority_deleted += 1
+                            del self.mapping[remove]
+                        print("----------------------------------")
+                                                
                     else:
                         if pkt_num < self.buffer[src][1] and pkt_num > (self.buffer[src][1] - 20):
                             print(f"{Fore.RED} Unexpected Pkt: {pkt_num} < Expected {self.buffer[src][1]} {Style.RESET_ALL}")
@@ -340,7 +356,7 @@ class ClusterHead:
         
 # ------------------------ Main Server Class ------------------------
 class MainServer():
-    def __init__(self, host, port, id = 1, buffer_size = 3, send_interval = 10):
+    def __init__(self, host, port, id = 1, buffer_size = 3, send_interval = 10, use_priority_queue = True):
         self.send_limit = 5
         self.id = id
         self.counter = 0
@@ -356,6 +372,9 @@ class MainServer():
         self.clusters_rcv = {}
         self.clusters_sent = {}
         self.server_rcv = {}
+        self.cluster_priority_lost = {}
+        self.server_priority_lost = 0
+        self.use_priority = use_priority_queue
         
         
         
@@ -424,6 +443,12 @@ class MainServer():
                         metrics = data.get("data")
                         sens_id = metrics.get("id")
                         if metrics.get("received"):
+                            deleted = metrics.get("priority_deleted")
+                            if src in self.cluster_priority_lost.keys():
+                                self.cluster_priority_lost[src] = deleted
+                            else:
+                                self.cluster_priority_lost[src] = deleted
+                            
                             if src in self.clusters_rcv.keys():
                                 # metrics.get("received") is a dictionary {sensor_id: number}
                                 for key in metrics.get("received").keys():
@@ -452,8 +477,13 @@ class MainServer():
                                 for key in metrics.get("data").get("sent").keys():
                                     self.sensors_sent[sens_id] = {key: metrics.get("data").get("sent")[key]}
                         print("----------------------------------")
+                        total_priority_lost = {x: self.cluster_priority_lost[x] / sum(self.clusters_rcv[x].values()) for x in self.cluster_priority_lost}
+                        # total_pkts_received = sum([x.get("received") for x in self.clusters_rcv.values()])
                         percentages = [(x,round(len(self.overall_rcv[x])/max(self.overall_rcv[x]),4)) for x in self.overall_rcv]
                         print(f"{Fore.LIGHTRED_EX} Overall Rcv Rate: {round(sum([x[1] for x in percentages])/len(percentages),4) if percentages else 0} {Style.RESET_ALL}")
+                        print(f"{Fore.LIGHTRED_EX} Overall Server Priority Loss Rates: {self.server_priority_lost/self.counter if self.counter > 0 else 0} {Style.RESET_ALL}")
+                        print(f"{Fore.LIGHTRED_EX} Overall Cluster Priority Loss Rate: {sum(total_priority_lost.values()) / len(total_priority_lost)} {Style.RESET_ALL}")
+                        print(f"{Fore.LIGHTRED_EX} Overall Cluster Priority Loss Rates: {total_priority_lost} {Style.RESET_ALL}")
                         print(f"{Fore.LIGHTRED_EX} Overall Rcv Rates: {[f'Sensor {x[0]}: %= {x[1]}' for x in percentages]} {Style.RESET_ALL}")
                         print(f"{Fore.LIGHTRED_EX} Overall Received: {[f"Sensor {x}: Total = {max(self.overall_rcv[x])}, RCV = {len(self.overall_rcv[x])}" for x in self.overall_rcv]} {Style.RESET_ALL}")
                         print(f"{Fore.LIGHTRED_EX} Sensors Sent: {self.sensors_sent} {Style.RESET_ALL}")
@@ -477,13 +507,27 @@ class MainServer():
                             
                             
                         priority = 0 if data.get('priority') else 1
-                        self.buffer[json.dumps(sensor_data)] = (priority, self.counter, self.send_limit)
+                        if self.use_priority == True:
+                            self.buffer[json.dumps(sensor_data)] = (priority, self.counter, self.send_limit)
+                        else:
+                            self.buffer[json.dumps(sensor_data)] = (1, self.counter, self.send_limit)
                         with open ("local_db.txt", "a") as f:
                             f.write(json.dumps(sensor_data))
                             f.write("\n")
                         if len(self.buffer) > self.buffer_size:
                             sorted_keys = sorted(self.buffer, key=lambda k: self.buffer[k], reverse=True)
-                            del self.buffer[sorted_keys[-1]]
+                            i = len(sorted_keys) - 1
+                            if self.use_priority == True:
+                                while i > 0:
+                                    if json.loads(sorted_keys[i]).get("priority") == True:
+                                        i -= 1
+                                    else:
+                                        break
+                            if json.loads(sorted_keys[i]).get("priority") == True:
+                                self.server_priority_lost += 1
+                            print(f"{Fore.RED} Buffer Full, Deleting {sorted_keys[i]} priority {Style.RESET_ALL}")
+                            
+                            del self.buffer[sorted_keys[i]]
                     else:
                         print(f"{Fore.RED} Pkt already received: (Sensor ID: {sensor_data.get('id')}, Sensor Pkt Num: {sensor_data.get('pkt_no')}), ignore data from Cluster: {src} {Style.RESET_ALL}")
                     self.lock.release()
